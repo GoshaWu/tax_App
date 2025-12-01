@@ -1,45 +1,97 @@
 import streamlit as st
 
+# --- 配置页面 ---
+st.set_page_config(page_title="工资条个税审计工具", page_icon="💰", layout="centered")
 
-def calculate_tax(month, monthly_income, monthly_deduction, special_deduction):
-    """
-    核心算法：累计预扣法 (2019版个税)
-    假设前提：前 month-1 个月的收入和扣除项与本月一致
-    """
-    threshold = 5000.0  # 基本减除费用
+# --- 注入 CSS 样式 (复刻 HTML 版本的精美外观) ---
+st.markdown("""
+<style>
+    /* 全局字体 */
+    .main { font-family: "Segoe UI", sans-serif; }
 
-    # 1. 计算累计应纳税所得额
-    cumulative_income = monthly_income * month
-    cumulative_deduction = (monthly_deduction + threshold + special_deduction) * month
-    cumulative_taxable_income = max(0, cumulative_income - cumulative_deduction)
+    /* 结果卡片样式 */
+    div[data-testid="stMetricValue"] { font-family: Consolas, monospace; }
 
-    # 2. 定义税率表 (级数, 税率, 速算扣除数)
+    /* 自定义审计表格样式 */
+    .audit-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 15px;
+        margin-top: 20px;
+        border: 1px solid #e1e4e8;
+    }
+    .audit-table th {
+        background-color: #f1f3f5;
+        text-align: left; /* 表头左对齐 */
+        padding: 12px;
+        color: #666;
+        font-weight: bold;
+        border-bottom: 2px solid #ddd;
+    }
+    .audit-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #eee;
+        text-align: left; /* 核心需求：左对齐 */
+        vertical-align: middle;
+    }
+
+    /* 字体与颜色 */
+    .font-mono { font-family: Consolas, Monaco, monospace; font-weight: 600; color: #333; }
+    .text-red { color: #c0392b; }
+    .text-note { color: #888; font-size: 13px; font-family: Consolas, monospace; }
+
+    /* 高亮行 */
+    .row-highlight { background-color: #f0f9ff; color: #0066cc; font-weight: bold; }
+    .row-final { background-color: #fff8e6; border-top: 2px solid #ffe58f; color: #856404; font-weight: bold; }
+
+    /* 智能提示框 */
+    .smart-tip {
+        background-color: #fffbe6;
+        border: 1px solid #ffe58f;
+        padding: 15px;
+        border-radius: 5px;
+        color: #856404;
+        margin-bottom: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+# --- 核心计算逻辑 ---
+def calculate_details(month, gross, social_total, special, slip_tax):
+    threshold = 5000.0
+
+    # 1. 累计计算
+    cum_gross = gross * month
+    cum_social = social_total * month
+    cum_threshold = threshold * month
+    cum_special = special * month
+    cum_deduction_total = cum_social + cum_threshold + cum_special
+    cum_taxable = max(0, cum_gross - cum_deduction_total)
+
+    # 2. 税率判定
     brackets = [
-        (36000, 0.03, 0),
-        (144000, 0.10, 2520),
-        (300000, 0.20, 16920),
-        (420000, 0.25, 31920),
-        (660000, 0.30, 52920),
-        (960000, 0.35, 85920),
+        (36000, 0.03, 0), (144000, 0.10, 2520), (300000, 0.20, 16920),
+        (420000, 0.25, 31920), (660000, 0.30, 52920), (960000, 0.35, 85920),
         (float('inf'), 0.45, 181920),
     ]
 
     rate = 0.03
-    quick_deduction = 0
+    quick = 0
     for limit, r, q in brackets:
-        if cumulative_taxable_income <= limit:
+        if cum_taxable <= limit:
             rate = r
-            quick_deduction = q
+            quick = q
             break
 
-    # 3. 计算本年累计应纳税额
-    total_tax_year = (cumulative_taxable_income * rate) - quick_deduction
+    cum_tax_payable = (cum_taxable * rate) - quick
 
-    # 4. 模拟前 (month-1) 个月的已缴税额 (反推本月应缴)
+    # 3. 模拟已缴 (前 month-1 个月)
+    prev_paid = 0
     if month > 1:
-        prev_income = monthly_income * (month - 1)
-        prev_deduc_total = (monthly_deduction + threshold + special_deduction) * (month - 1)
-        prev_taxable = max(0, prev_income - prev_deduc_total)
+        prev_gross = gross * (month - 1)
+        prev_deduc = (social_total + threshold + special) * (month - 1)
+        prev_taxable = max(0, prev_gross - prev_deduc)
 
         p_rate = 0.03
         p_quick = 0
@@ -48,128 +100,139 @@ def calculate_tax(month, monthly_income, monthly_deduction, special_deduction):
                 p_rate = r
                 p_quick = q
                 break
-        prev_tax_paid = (prev_taxable * p_rate) - p_quick
-    else:
-        prev_tax_paid = 0
+        prev_paid = (prev_taxable * p_rate) - p_quick
 
-    current_month_tax = total_tax_year - prev_tax_paid
+    current_tax = cum_tax_payable - prev_paid
+    diff = current_tax - slip_tax
 
     return {
-        "current_tax": current_month_tax,
-        "cumulative_taxable": cumulative_taxable_income,
+        "cum_gross": cum_gross,
+        "cum_threshold": cum_threshold,
+        "cum_social": cum_social,
+        "cum_special": cum_special,
+        "cum_taxable": cum_taxable,
         "rate": rate,
-        "year_total_tax": total_tax_year,
-        "prev_paid": prev_tax_paid
+        "quick": quick,
+        "cum_tax_payable": cum_tax_payable,
+        "prev_paid": prev_paid,
+        "current_tax": current_tax,
+        "diff": diff
     }
 
 
-# --- Streamlit UI 界面 ---
+# --- 界面布局 ---
 
-st.set_page_config(page_title="工资条个税计算器", page_icon="🧮")
+st.title("💰 工资条个税审计工具")
+st.markdown("数据透明 • 计算合规 • 结果精确 (Python Pro版)")
 
-st.title("🧮 工资条个税校验工具")
-st.markdown("本工具采用**累计预扣法**计算，只需手动输入工资条上的数据，即可快速验证个税是否准确。")
-
-# 使用表单容器，让布局更紧凑
 with st.container():
-    st.subheader("1. 数据录入")
+    st.subheader("1. 基础数据")
+    c1, c2 = st.columns(2)
+    with c1:
+        month = st.number_input("当前月份", 1, 12, 11)
+    with c2:
+        # 需求：placeholder 改为 "例如 8000" (Streamlit placeholder 仅在空时显示，这里用 help 或 label 提示)
+        gross_pay = st.number_input("应发合计 (税前)", min_value=0.0, step=100.0, format="%.2f", help="例如 8000")
 
-    col1, col2 = st.columns(2)
+    st.subheader("2. 个人扣缴明细 (按顺序填写)")
+    # 需求：严格顺序 1.公积金 2.养老 3.失业 4.医疗
+    c3, c4 = st.columns(2)
+    with c3:
+        fund = st.number_input("① 住房公积金", 0.0, step=10.0, format="%.2f")
+    with c4:
+        pension = st.number_input("② 养老保险", 0.0, step=10.0, format="%.2f")
 
-    with col1:
-        month = st.number_input("当前月份", min_value=1, max_value=12, value=11, step=1)
-        gross_pay = st.number_input("应发合计 (税前收入)", value=0.0, format="%.2f",
-                                    help="工资条中金额最大的一项，未扣除任何费用前的总额")
+    c5, c6 = st.columns(2)
+    with c5:
+        unemploy = st.number_input("③ 失业保险", 0.0, step=10.0, format="%.2f")
+    with c6:
+        medical = st.number_input("④ 医疗保险", 0.0, step=10.0, format="%.2f")
 
-        st.markdown("---")
-        st.markdown("**👇 个人扣缴明细 (请按顺序填写)**")
+    social_total = fund + pension + unemploy + medical
+    st.caption(f"🧾 三险一金合计: **¥ {social_total:,.2f}**")
 
-        # 按您要求的顺序调整
-        fund = st.number_input("1. 住房公积金", value=0.0, format="%.2f")
-        pension = st.number_input("2. 养老保险", value=0.0, format="%.2f")
-        unemploy = st.number_input("3. 失业保险", value=0.0, format="%.2f")
-        medical = st.number_input("4. 医疗保险", value=0.0, format="%.2f")
+    st.subheader("3. 校验与调节")
+    c7, c8 = st.columns(2)
+    with c7:
+        slip_tax = st.number_input("工资条显示的个税", 0.0, step=10.0, format="%.2f")
+    with c8:
+        st.markdown("**★ 专项附加扣除 (关键)**")
+        special = st.number_input("专项附加扣除", 0.0, step=100.0, format="%.2f", label_visibility="collapsed",
+                                  help="如果不确定，先填0，系统会自动反推")
 
-        # 自动计算三险一金总和
-        social_total = fund + pension + unemploy + medical
-        st.info(f"🧾 个人社保公积金扣除合计: **¥{social_total:.2f}**")
-
-    with col2:
-        slip_tax = st.number_input("工资条显示的个税 (目标值)", value=0.0, format="%.2f",
-                                   help="用于和系统计算结果进行比对")
-
-        st.markdown("---")
-        st.warning("👇 **关键项：专项附加扣除**")
-        special_deduction = st.number_input(
-            "专项附加扣除总额",
-            value=0.0,
-            step=100.0,
-            format="%.2f",
-            help="包括子女教育、老人赡养、房贷利息、租金等。工资条通常不显示此项，但它直接决定税额。"
-        )
-        st.caption("💡 如果不确定具体金额，先填 0，计算后系统会尝试帮您反推。")
-
-# 计算按钮
-if st.button("开始计算与校验", type="primary", use_container_width=True):
-    if gross_pay <= 0:
-        st.error("请填写有效的应发合计金额")
+# --- 计算按钮与结果 ---
+if st.button("生成计算过程明细单", type="primary", use_container_width=True):
+    if gross_pay == 0:
+        st.error("请填写应发合计")
     else:
         # 执行计算
-        res = calculate_tax(month, gross_pay, social_total, special_deduction)
-
-        sys_tax = res["current_tax"]
-        diff = sys_tax - slip_tax
+        res = calculate_details(month, gross_pay, social_total, special, slip_tax)
 
         st.divider()
-        st.subheader("2. 校验结果")
 
-        # 结果展示指标卡
-        c1, c2, c3 = st.columns(3)
-        c1.metric("工资条个税", f"¥ {slip_tax:.2f}")
-        c2.metric("系统计算个税", f"¥ {sys_tax:.2f}")
-        c3.metric("差额", f"¥ {diff:.2f}", delta_color="inverse")
+        # 1. 顶部 KPI 卡片
+        k1, k2, k3 = st.columns(3)
+        k1.metric("工资条显示", f"¥ {slip_tax:,.2f}")
+        k2.metric("系统计算", f"¥ {res['current_tax']:,.2f}")
+        k3.metric("差额", f"¥ {res['diff']:+,.2f}", delta_color="inverse")
 
-        if abs(diff) < 1.0:
-            st.success("✅ **校验通过！** 您的工资条个税计算完全正确。")
-        else:
-            st.error(f"⚠️ **存在差异**")
+        # 2. 智能提示 (Smart Tip)
+        estimated = 0
+        if res['rate'] > 0:
+            estimated = res['diff'] / res['rate']
 
-            # 智能分析差异原因
-            st.markdown("#### 🕵️ 差异分析与建议")
+        if special == 0 and res['diff'] > 10 and estimated > 500:
+            st.markdown(f"""
+            <div class="smart-tip">
+                <strong>💡 智能推断：</strong><br>
+                系统算出税额偏高。根据 <strong>{res['diff']:.2f}元</strong> 的差额，您可能少填了约 
+                <strong>¥ {estimated:,.0f}</strong> 的专项附加扣除（如子女教育、赡养老人）。
+            </div>
+            """, unsafe_allow_html=True)
 
-            estimated_special = 0
-            if res["rate"] > 0:
-                estimated_special = diff / res["rate"]
 
-            if special_deduction == 0 and diff > 0 and estimated_special > 500:
-                st.info(f"""
-                **推测原因：未录入专项附加扣除。**
+        # 3. 详细审计表格 (HTML渲染，确保左对齐和样式)
+        # 格式化助手
+        def fmt(n):
+            return f"¥ {n:,.2f}"
 
-                根据 **{diff:.2f}元** 的税额差异和您当前的税率 (**{res['rate'] * 100:.0f}%**)，
-                您可能在个人所得税APP中申报了约 **¥{estimated_special:.0f}** 元的专项附加扣除（如子女教育、赡养老人等）。
 
-                👉 请尝试在上方“专项附加扣除总额”中填入 **{estimated_special:.0f}**，然后重新计算。
-                """)
-            else:
-                st.markdown(f"""
-                 **可能的原因：**
-                 1. **收入波动**：本工具假设您前 {month - 1} 个月的工资与本月完全一致。如果之前有奖金或缺勤，累计税率会有偏差。
-                 2. **免税项**：检查应发合计中是否包含了通讯费、差旅费等免税补贴。
-                 """)
+        rows_html = ""
+        data = [
+            ("1", "累计应发工资", res['cum_gross'], f"月薪 {gross_pay:,.2f} × {month}个月", ""),
+            ("2", "(-) 累计基本减除", -res['cum_threshold'], f"5000 × {month}个月", "text-red"),
+            ("3", "(-) 累计社保公积金", -res['cum_social'], f"个人月缴 {social_total:,.2f} × {month}个月", "text-red"),
+            ("4", "(-) 累计专项附加", -res['cum_special'], f"申报额 {special:,.2f} × {month}个月", "text-red"),
+            ("5", "(=) 累计应纳税所得额", res['cum_taxable'], "累计收入 - 上述扣除项", "row-highlight"),
+            ("6", "累计应纳税额", res['cum_tax_payable'],
+             f"累计基数 × {res['rate'] * 100:.0f}% - 速算扣除数{res['quick']}", "row-highlight"),
+            ("7", "(-) 模拟已缴税额", -res['prev_paid'], f"前 {month - 1} 个月估算已缴", "text-red"),
+            ("8", "(=) 本月应补(退)税", res['current_tax'], "累计应纳 - 已缴", "row-final"),
+        ]
 
-        # 详细计算折叠面板
-        with st.expander("查看详细计算过程 (累计预扣法)"):
-            st.write(f"""
-            | 项目 | 金额/说明 |
-            | :--- | :--- |
-            | **累计月份** | {month} 个月 |
-            | **累计应发收入** | ¥{gross_pay * month:,.2f} |
-            | **(-) 累计减除费用** | ¥{5000 * month:,.2f} |
-            | **(-) 累计社保公积金** | ¥{social_total * month:,.2f} |
-            | **(-) 累计专项附加扣除** | ¥{special_deduction * month:,.2f} |
-            | **(=) 累计应纳税所得额** | **¥{res['cumulative_taxable']:,.2f}** |
-            | **(×) 适用税率** | {res['rate'] * 100:.0f}% (速算扣除数 {2520 if res['rate'] == 0.1 else 0}) |
-            | **(=) 累计应纳税额** | ¥{res['year_total_tax']:,.2f} |
-            | **(-) 模拟已缴税额** | ¥{res['prev_paid']:,.2f} |
-            | **(=) 本月实缴个税** | **¥{sys_tax:,.2f}** |
-            """)
+        for step, name, val, note, cls in data:
+            val_style = "color:#c0392b" if (val < 0 and "row-final" not in cls) else ""
+            rows_html += f"""
+            <tr class="{cls}">
+                <td style="text-align:center">{step}</td>
+                <td>{name}</td>
+                <td class="font-mono" style="{val_style}">{fmt(val)}</td>
+                <td class="text-note">{note}</td>
+            </tr>
+            """
+
+        st.markdown(f"""
+        <h4>📊 计算过程明细单</h4>
+        <table class="audit-table">
+            <thead>
+                <tr>
+                    <th style="width:8%; text-align:center">步骤</th>
+                    <th style="width:25%">项目名称</th>
+                    <th style="width:25%">累计金额 (元)</th> <th style="width:42%">计算过程 / 公式备注</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows_html}
+            </tbody>
+        </table>
+        """, unsafe_allow_html=True)
