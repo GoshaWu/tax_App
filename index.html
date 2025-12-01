@@ -1,0 +1,83 @@
+# --- 5. 计算结果展示 ---
+if submitted:
+    if gross_pay == 0:
+        st.warning("⚠️ 请输入有效的应发合计金额")
+    else:
+        # 执行计算
+        res = calculate_details(month, gross_pay, social_total, special, slip_tax)
+
+        # --- A. 顶部核心指标 ---
+        k1, k2, k3 = st.columns(3)
+        k1.metric("工资条显示", f"¥ {slip_tax:,.2f}")
+        k2.metric("系统计算", f"¥ {res['current_tax']:,.2f}")
+        k3.metric("差额", f"¥ {res['diff']:+,.2f}", delta_color="inverse")
+
+        # --- B. 智能差异分析 ---
+        diff = res['diff']
+        estimated_special = 0
+        if res['rate'] > 0:
+            estimated_special = abs(diff) / res['rate']
+
+        if abs(diff) < 1.0:
+            st.markdown('<div class="smart-tip-box tip-success"><strong>✅ 完美匹配：</strong> 您的工资条个税计算完全正确。</div>', unsafe_allow_html=True)
+
+        elif diff > 10:
+             st.markdown(f"""<div class="smart-tip-box tip-warn">
+            <strong>💡 智能推断：您可能少填了专项附加扣除</strong><br>
+            系统计算值 <strong>(¥{res['current_tax']:.2f})</strong> 高于工资条。根据差额反推，您可能每月有约 <strong>¥ {estimated_special:,.0f}</strong> 的专项附加扣除。
+            </div>""", unsafe_allow_html=True)
+
+        elif diff < -10:
+            st.markdown(f"""<div class="smart-tip-box tip-info">
+            <strong>💡 智能推断：前期收入波动 或 奖金影响</strong><br>
+            系统计算值 <strong>(¥{res['current_tax']:.2f})</strong> 低于工资条。这意味着您<strong>前 {month-1} 个月的实际平均收入可能高于本月</strong>，或者之前发过奖金。
+            </div>""", unsafe_allow_html=True)
+
+        # --- C. 详细审计表格 (关键修复：移除缩进) ---
+        def fmt_money(val):
+            sign = "-" if val < 0 else ""
+            return f"{sign} ¥ {abs(val):,.2f}"
+
+        data_rows = [
+            ("1", "累计应发工资", res['cum_gross'], f"月薪 {gross_pay:,.2f} × {month}个月", ""),
+            ("2", "(-) 累计基本减除", -res['cum_threshold'], f"5000 × {month}个月", "text-red"),
+            ("3", "(-) 累计社保公积金", -res['cum_social'], f"个人月缴 {social_total:,.2f} × {month}个月", "text-red"),
+            ("4", "(-) 累计专项附加", -res['cum_special'], f"申报额 {special:,.2f} × {month}个月", "text-red"),
+            ("5", "(=) 累计应纳税所得额", res['cum_taxable'], "累计收入 - 上述扣除项", "row-highlight"),
+            ("6", "累计应纳税额", res['cum_tax_payable'], f"累计基数 × {res['rate']*100:.0f}% - 速算扣除数{res['quick']}", "row-highlight"),
+            ("7", "(-) 模拟已缴税额", -res['prev_paid'], f"前 {month-1} 个月估算已缴", "text-red"),
+            ("8", "(=) 本月应补(退)税", res['current_tax'], "累计应纳 - 已缴", "row-final"),
+        ]
+
+        # 修复点：这里不使用多行缩进字符串，避免被识别为 Markdown 代码块
+        rows_html = ""
+        for step, name, val, note, cls in data_rows:
+            val_cls = "text-red" if (val < 0 and "row-final" not in cls) else "font-mono"
+            if "row-final" in cls: val_cls = "font-mono"
+
+            # 使用单行拼接，确保没有任何前导空格
+            rows_html += f'<tr class="{cls}">'
+            rows_html += f'<td style="text-align:center; color:#999;">{step}</td>'
+            rows_html += f'<td>{name}</td>'
+            rows_html += f'<td class="{val_cls} font-mono">{fmt_money(val)}</td>'
+            rows_html += f'<td class="text-note">{note}</td>'
+            rows_html += '</tr>'
+
+        st.markdown(f"""
+<div class="table-container">
+<h4 style="margin-top:0; margin-bottom:15px; color:#333;">📋 计算过程明细单</h4>
+<table class="audit-table">
+<thead>
+<tr>
+<th style="width:8%; text-align:center">步骤</th>
+<th style="width:25%">项目名称</th>
+<th style="width:25%">累计金额 (元)</th>
+<th style="width:42%">计算过程 / 公式备注</th>
+</tr>
+</thead>
+<tbody>
+{rows_html}
+</tbody>
+</table>
+</div>
+""", unsafe_allow_html=True)
