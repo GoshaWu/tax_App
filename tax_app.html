@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个税计算器 (左对齐版)</title>
+    <style>
+        :root {
+            --primary: #0062cc;
+            --bg: #f4f7f9;
+            --card-bg: #ffffff;
+            --text-main: #2d3436;
+            --text-light: #636e72;
+            --border: #dfe6e9;
+            --highlight: #e3f2fd;
+            --final: #fff3cd;
+            --final-border: #ffeeba;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            padding: 35px;
+        }
+
+        h1 { margin-top: 0; text-align: center; color: var(--primary); font-size: 1.75rem; letter-spacing: 1px; }
+        .subtitle { text-align: center; color: var(--text-light); margin-bottom: 30px; font-size: 0.9rem; }
+
+        /* 输入区域 */
+        .input-panel {
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .panel-header {
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f1f2f6;
+            font-size: 1.05rem;
+        }
+
+        .row { display: flex; gap: 20px; margin-bottom: 18px; }
+        .col { flex: 1; }
+        
+        label { display: block; font-size: 0.85rem; margin-bottom: 8px; font-weight: 600; color: #444; }
+        input[type="number"] {
+            width: 100%; padding: 10px 12px; border: 1px solid #ced6e0; border-radius: 6px;
+            font-family: Consolas, Monaco, monospace; font-size: 1rem; box-sizing: border-box; transition: 0.2s;
+        }
+        input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px rgba(0,98,204,0.1); }
+        
+        /* 专项附加扣除特殊样式 */
+        .input-special { background-color: #fffbf0; border-color: #ffe58f !important; }
+
+        .btn-calc {
+            width: 100%; padding: 14px; background: var(--primary); color: white; border: none;
+            border-radius: 8px; font-size: 1.1rem; font-weight: 600; cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,98,204,0.2); transition: 0.2s;
+        }
+        .btn-calc:hover { background: #0051a8; transform: translateY(-1px); }
+
+        /* 结果展示区 */
+        #resultArea { display: none; margin-top: 35px; animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* 结果卡片 */
+        .summary-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px; }
+        .card { border: 1px solid var(--border); padding: 15px; text-align: center; border-radius: 8px; background: #fafafa; }
+        .card-label { font-size: 0.8rem; color: var(--text-light); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card-val { font-size: 1.4rem; font-weight: 700; font-family: Consolas, monospace; }
+        .text-primary { color: var(--primary); }
+        .text-green { color: #27ae60; }
+        .text-red { color: #c0392b; }
+
+        /* --- 表格样式 --- */
+        .table-container {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden; 
+        }
+        
+        .detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed; /* 固定列宽 */
+        }
+
+        /* 列宽定义 */
+        .col-step { width: 8%; }
+        .col-name { width: 25%; }
+        .col-amount { width: 22%; } /* 稍微加宽一点金额列 */
+        .col-note { width: 45%; }
+
+        .detail-table th {
+            background: #f1f2f6;
+            color: var(--text-light);
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border);
+            text-align: left; /* 表头统一左对齐 */
+        }
+
+        .detail-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f1f2f6;
+            font-size: 0.9rem;
+            vertical-align: middle;
+            color: var(--text-main);
+            text-align: left; /* 单元格内容左对齐 */
+        }
+
+        /* 对齐工具类 */
+        .text-center { text-align: center !important; }
+        /* 移除 text-right，默认即为 left */
+        
+        .font-mono { font-family: Consolas, Monaco, monospace; font-weight: 600; }
+        
+        .note-text { color: #95a5a6; font-size: 0.85rem; font-family: Consolas, monospace; }
+        
+        /* 隔行变色 */
+        .detail-table tr:nth-child(even) { background-color: #fafbfc; }
+        
+        /* 关键行高亮 */
+        .row-highlight { background-color: var(--highlight) !important; color: var(--primary); }
+        .row-final { background-color: var(--final) !important; color: #856404; font-weight: bold; border-top: 2px solid var(--final-border); }
+
+        /* 移动端适配 */
+        @media(max-width: 600px) {
+            .container { padding: 15px; }
+            .row { flex-direction: column; gap: 10px; }
+            .summary-cards { grid-template-columns: 1fr; }
+            .detail-table th { display: none; }
+            .detail-table tr { display: block; border: 1px solid var(--border); margin-bottom: 10px; border-radius: 6px; padding: 10px; }
+            .detail-table td { display: flex; justify-content: space-between; padding: 6px 0; border: none; width: 100%; box-sizing: border-box; }
+            .detail-table td::before { content: attr(data-label); font-weight: bold; color: #777; margin-right: 10px; text-align: left; }
+            /* 移动端备注单独一行 */
+            .col-note { display: block; color: #999; margin-top: 5px; font-size: 0.8rem; }
+            .col-note::before { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>💰 工资条个税审计单</h1>
+    <p class="subtitle">数据透明 • 计算合规 • 结果精确</p>
+
+    <div class="input-panel">
+        <div class="panel-header">1. 基础数据录入</div>
+        <div class="row">
+            <div class="col">
+                <label>当前月份</label>
+                <input type="number" id="month" value="11" min="1" max="12">
+            </div>
+            <div class="col">
+                <label>应发合计 (税前)</label>
+                <input type="number" id="grossPay" placeholder="例如 8000" step="0.01">
+            </div>
+        </div>
+
+        <div class="panel-header" style="margin-top:10px; border-top:none;">2. 个人扣缴明细 (按顺序填写)</div>
+        <div class="row">
+            <div class="col"><label>① 住房公积金</label><input type="number" id="fund" placeholder="0.00"></div>
+            <div class="col"><label>② 养老保险</label><input type="number" id="pension" placeholder="0.00"></div>
+        </div>
+        <div class="row">
+            <div class="col"><label>③ 失业保险</label><input type="number" id="unemployment" placeholder="0.00"></div>
+            <div class="col"><label>④ 医疗保险</label><input type="number" id="medical" placeholder="0.00"></div>
+        </div>
+        <div style="text-align:right; font-size:0.8rem; color:var(--primary); font-weight:600; margin-top:-10px;">
+            三险一金合计：¥ <span id="socialSum">0.00</span>
+        </div>
+
+        <div class="panel-header" style="margin-top:20px;">3. 校验与调节</div>
+        <div class="row">
+            <div class="col">
+                <label>工资条显示的个税</label>
+                <input type="number" id="slipTax" placeholder="0.00">
+            </div>
+            <div class="col">
+                <label style="color:#d35400;">★ 专项附加扣除 (关键)</label>
+                <input type="number" id="specialDeduction" class="input-special" placeholder="0 (子女/老人/房贷)">
+            </div>
+        </div>
+    </div>
+
+    <button class="btn-calc" onclick="calculate()">生成计算过程明细单</button>
+
+    <div id="resultArea">
+        <div class="summary-cards">
+            <div class="card">
+                <div class="card-label">工资条显示</div>
+                <div class="card-val" id="dispSlipTax">0.00</div>
+            </div>
+            <div class="card">
+                <div class="card-label">系统计算</div>
+                <div class="card-val text-primary" id="dispSysTax">0.00</div>
+            </div>
+            <div class="card">
+                <div class="card-label">差额</div>
+                <div class="card-val" id="dispDiff">--</div>
+            </div>
+        </div>
+
+        <div class="panel-header">📊 计算过程明细单</div>
+        <div class="table-container">
+            <table class="detail-table">
+                <thead>
+                    <tr>
+                        <th class="col-step text-center">步骤</th>
+                        <th class="col-name">项目名称</th>
+                        <th class="col-amount">累计金额 (元)</th>
+                        <th class="col-note">计算过程 / 公式备注</th>
+                    </tr>
+                </thead>
+                <tbody id="detailBody">
+                    </tbody>
+            </table>
+        </div>
+        
+        <div id="smartTip" style="margin-top:15px; font-size:0.9rem; line-height:1.6; color:#666;"></div>
+    </div>
+</div>
+
+<script>
+    // 监听输入自动更新合计
+    ['fund','pension','unemployment','medical'].forEach(id => {
+        document.getElementById(id).addEventListener('input', () => {
+            const sum = getVal('fund') + getVal('pension') + getVal('unemployment') + getVal('medical');
+            document.getElementById('socialSum').innerText = fmt(sum);
+        });
+    });
+
+    function fmt(num) {
+        return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function getVal(id) {
+        return parseFloat(document.getElementById(id).value) || 0;
+    }
+
+    function calculate() {
+        const month = parseInt(document.getElementById('month').value);
+        const gross = getVal('grossPay');
+        const fund = getVal('fund');
+        const pension = getVal('pension');
+        const unemploy = getVal('unemployment');
+        const medical = getVal('medical');
+        const special = getVal('specialDeduction');
+        const slipTax = getVal('slipTax');
+
+        if (!gross) { alert("请填写应发合计"); return; }
+
+        const socialTotal = fund + pension + unemploy + medical;
+        const threshold = 5000;
+
+        // 计算逻辑
+        const cumGross = gross * month;
+        const cumSocial = socialTotal * month;
+        const cumThreshold = threshold * month;
+        const cumSpecial = special * month;
+        const cumTotalDeduction = cumSocial + cumThreshold + cumSpecial;
+        const cumTaxable = Math.max(0, cumGross - cumTotalDeduction);
+
+        // 税率档位
+        let rate = 0.03, quick = 0;
+        if (cumTaxable > 960000) { rate = 0.45; quick = 181920; }
+        else if (cumTaxable > 660000) { rate = 0.35; quick = 85920; }
+        else if (cumTaxable > 420000) { rate = 0.30; quick = 52920; }
+        else if (cumTaxable > 300000) { rate = 0.25; quick = 31920; }
+        else if (cumTaxable > 144000) { rate = 0.20; quick = 16920; }
+        else if (cumTaxable > 36000)  { rate = 0.10; quick = 2520; }
+
+        const cumTaxPayable = (cumTaxable * rate) - quick;
+
+        // 模拟已缴
+        let prevTaxPaid = 0;
+        if (month > 1) {
+            const prevGross = gross * (month - 1);
+            const prevDeduc = (socialTotal + threshold + special) * (month - 1);
+            const prevTaxable = Math.max(0, prevGross - prevDeduc);
+            let pRate = 0.03, pQuick = 0;
+            // 简化的反推逻辑
+            if (prevTaxable > 36000 && prevTaxable <= 144000) { pRate = 0.10; pQuick = 2520; }
+            else if (prevTaxable > 144000 && prevTaxable <= 300000) { pRate = 0.20; pQuick = 16920; }
+            else if (prevTaxable > 300000 && prevTaxable <= 420000) { pRate = 0.25; pQuick = 31920; }
+            
+            prevTaxPaid = (prevTaxable * pRate) - pQuick;
+        }
+
+        const currentTax = cumTaxPayable - prevTaxPaid;
+        const diff = currentTax - slipTax;
+
+        // 渲染顶部卡片
+        document.getElementById('resultArea').style.display = 'block';
+        document.getElementById('dispSlipTax').innerText = "¥" + fmt(slipTax);
+        document.getElementById('dispSysTax').innerText = "¥" + fmt(currentTax);
+        
+        const diffEl = document.getElementById('dispDiff');
+        diffEl.innerText = (diff>=0?"+":"") + fmt(diff);
+        diffEl.className = Math.abs(diff)<1 ? "card-val text-green" : "card-val text-red";
+
+        // 渲染表格
+        const rows = [
+            { step: "1", name: "累计应发工资", val: cumGross, note: `月薪 ${fmt(gross)} × ${month}个月` },
+            { step: "2", name: "(-) 累计基本减除", val: -cumThreshold, note: `5000 × ${month}个月` },
+            { step: "3", name: "(-) 累计社保公积金", val: -cumSocial, note: `个人月缴 ${fmt(socialTotal)} × ${month}个月` },
+            { step: "4", name: "(-) 累计专项附加", val: -cumSpecial, note: `申报额 ${fmt(special)} × ${month}个月` },
+            { step: "5", name: "(=) 累计应纳税所得额", val: cumTaxable, note: `累计收入 - 上述扣除项`, highlight: true },
+            { step: "6", name: "累计应纳税额", val: cumTaxPayable, note: `累计基数 × ${(rate*100).toFixed(0)}% - 速算扣除数${quick}`, highlight: true },
+            { step: "7", name: "(-) 模拟已缴税额", val: -prevTaxPaid, note: `前 ${month-1} 个月估算已缴` },
+            { step: "8", name: "(=) 本月应补(退)税", val: currentTax, note: `累计应纳 - 已缴`, final: true },
+        ];
+
+        let html = "";
+        rows.forEach(r => {
+            let cls = "";
+            if(r.highlight) cls = "row-highlight";
+            if(r.final) cls = "row-final";
+            
+            let colorStyle = (r.val < 0 && !r.final) ? "color:#c0392b" : "";
+            
+            html += `
+                <tr class="${cls}">
+                    <td class="text-center" data-label="步骤">${r.step}</td>
+                    <td data-label="项目">${r.name}</td>
+                    <td class="font-mono" data-label="金额" style="${colorStyle}">¥ ${fmt(r.val)}</td>
+                    <td class="col-note" data-label="备注">${r.note}</td>
+                </tr>
+            `;
+        });
+        document.getElementById('detailBody').innerHTML = html;
+
+        // 智能提示
+        const tipEl = document.getElementById('smartTip');
+        let estimated = 0;
+        if(rate>0) estimated = diff/rate;
+        
+        if (special === 0 && diff > 10 && estimated > 500) {
+            tipEl.innerHTML = `<div style="background:#fffbe6; border:1px solid #ffe58f; padding:10px; border-radius:4px; color:#856404;">
+                <strong>💡 智能推断：</strong> 系统算出税额偏高。根据 <strong>${fmt(diff)}元</strong> 的差额，您可能少填了约 <strong>¥${fmt(estimated)}</strong> 的专项附加扣除。
+            </div>`;
+        } else {
+            tipEl.innerHTML = "";
+        }
+    }
+</script>
+
+</body>
+</html>
